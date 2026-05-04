@@ -120,3 +120,29 @@ def delete_user(phone):
     c.execute("DELETE FROM users WHERE phone = ?", (phone,))
     conn.commit()
     conn.close()
+
+def save_token(phone, token):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS tokens (
+        phone TEXT PRIMARY KEY,
+        token TEXT
+    )''')
+    c.execute("INSERT OR REPLACE INTO tokens (phone, token) VALUES (?, ?)", (phone, token))
+    conn.commit()
+    conn.close()
+
+def get_phone_by_token(token):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS tokens (
+        phone TEXT PRIMARY KEY,
+        token TEXT
+    )''')
+    c.execute("SELECT phone FROM tokens WHERE token = ?", (token,))
+    result = c.fetchone()
+    conn.close()
+    return result[0] if result else None
+
+def token_exists(token):
+    return get_phone_by_token(token) is not None
