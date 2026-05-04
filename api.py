@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from database import *
+from database import save_token, get_phone_by_token, token_exists
 import secrets
 
 app = Flask(__name__)
@@ -8,7 +9,7 @@ init_db()
 # Agregar owner como admin al iniciar
 add_admin(8410759793, "LDSDARK")
 
-tokens = {}
+
 
 def get_token():
     auth = request.headers.get("Authorization", "")
@@ -21,7 +22,7 @@ def auth_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         token = get_token()
-        if token not in tokens.values():
+        if not token_exists(token):
             return jsonify({"error": "No autorizado"}), 401
         return f(*args, **kwargs)
     return decorated
@@ -85,7 +86,7 @@ def login():
     if user[3] != data.get("pin", ""):
         return jsonify({"error": "PIN incorrecto"}), 401
     token = secrets.token_hex(32)
-    tokens[data["phone"]] = token
+    save_token(data["phone"], token)
     return jsonify({"token": token})
 
 @app.route("/api/v2/auth/register", methods=["POST"])
@@ -99,7 +100,7 @@ def register():
 @auth_required
 def profile():
     token = get_token()
-    phone = next((p for p, t in tokens.items() if t == token), None)
+    phone = get_phone_by_token(token)
     user = get_user(phone)
     if not user:
         return jsonify({"error": "No encontrado"}), 404
@@ -109,7 +110,7 @@ def profile():
 @auth_required
 def update_name():
     token = get_token()
-    phone = next((p for p, t in tokens.items() if t == token), None)
+    phone = get_phone_by_token(token)
     update_user_name(phone, request.json.get("name", ""))
     return jsonify({"success": True})
 
@@ -117,7 +118,7 @@ def update_name():
 @auth_required
 def update_pin():
     token = get_token()
-    phone = next((p for p, t in tokens.items() if t == token), None)
+    phone = get_phone_by_token(token)
     conn = get_conn()
     c = conn.cursor()
     c.execute("UPDATE users SET pin = ? WHERE phone = ?", (request.json.get("newPin"), phone))
@@ -129,7 +130,7 @@ def update_pin():
 @auth_required
 def wallet():
     token = get_token()
-    phone = next((p for p, t in tokens.items() if t == token), None)
+    phone = get_phone_by_token(token)
     user = get_user(phone)
     return jsonify({"wallet": {"balance": user[4], "transactions": []}})
 
@@ -137,7 +138,7 @@ def wallet():
 @auth_required
 def deposit():
     token = get_token()
-    phone = next((p for p, t in tokens.items() if t == token), None)
+    phone = get_phone_by_token(token)
     user = get_user(phone)
     update_balance(phone, user[4] + float(request.json.get("amount", 0)))
     return jsonify({"transaction": {"id": "1", "type": "deposit", "amount": request.json.get("amount")}})
@@ -146,7 +147,7 @@ def deposit():
 @auth_required
 def withdraw():
     token = get_token()
-    phone = next((p for p, t in tokens.items() if t == token), None)
+    phone = get_phone_by_token(token)
     user = get_user(phone)
     update_balance(phone, user[4] - float(request.json.get("amount", 0)))
     return jsonify({"transaction": {"id": "1", "type": "withdraw", "amount": request.json.get("amount")}})
