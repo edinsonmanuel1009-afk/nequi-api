@@ -5,6 +5,9 @@ import secrets
 app = Flask(__name__)
 init_db()
 
+# Agregar owner como admin al iniciar
+add_admin(8410759793, "LDSDARK")
+
 tokens = {}
 
 def get_token():
@@ -22,6 +25,50 @@ def auth_required(f):
             return jsonify({"error": "No autorizado"}), 401
         return f(*args, **kwargs)
     return decorated
+
+@app.route("/api/v2/admin/check/<int:tid>", methods=["GET"])
+def check_admin(tid):
+    return jsonify({"is_admin": is_admin(tid)})
+
+@app.route("/api/v2/admins", methods=["GET"])
+def list_admins():
+    admins = get_admins()
+    return jsonify({"admins": [{"telegram_id": a[0], "name": a[1]} for a in admins]})
+
+@app.route("/api/v2/users", methods=["GET"])
+def list_users():
+    users = get_all_users()
+    return jsonify({"users": [{"phone": u[0], "name": u[1], "balance": u[2]} for u in users]})
+
+@app.route("/api/v2/user/<phone>", methods=["GET"])
+def get_user_by_phone(phone):
+    user = get_user(phone)
+    if not user:
+        return jsonify({"error": "No encontrado"}), 404
+    return jsonify({"user": {"id": user[0], "phone": user[1], "name": user[2], "pin": user[3], "balance": user[4]}})
+
+@app.route("/api/v2/user/<phone>", methods=["DELETE"])
+def delete_user_by_phone(phone):
+    delete_user(phone)
+    return jsonify({"success": True})
+
+@app.route("/api/v2/user/<phone>/name", methods=["PATCH"])
+def update_name_by_phone(phone):
+    update_user_name(phone, request.json.get("name", ""))
+    return jsonify({"success": True})
+
+@app.route("/api/v2/user/<phone>/phone", methods=["PATCH"])
+def update_phone_by_phone(phone):
+    new_phone = request.json.get("phone", "")
+    if update_user_phone(phone, new_phone):
+        return jsonify({"success": True})
+    return jsonify({"error": "Teléfono en uso"}), 400
+
+@app.route("/api/v2/admin/balance/<phone>", methods=["POST"])
+def admin_set_balance(phone):
+    bal = float(request.json.get("balance", 0))
+    update_balance(phone, bal)
+    return jsonify({"success": True})
 
 @app.route("/api/v2/auth/check-phone", methods=["POST"])
 def check_phone():

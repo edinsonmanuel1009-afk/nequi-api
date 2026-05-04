@@ -1,27 +1,53 @@
 import os
 import telebot
+import requests
 from telebot import types
-from database import *
 
 BOT_TOKEN = "8462739141:AAFhKATM8xWk-sgbDxpNyDCdT4ZDiQOxP4E"
 OWNER_ID = 8410759793
+API_URL = "https://nequi-api-production-82b7.up.railway.app"
 
 bot = telebot.TeleBot(BOT_TOKEN)
-init_db()
-add_admin(OWNER_ID, "LDSDARK")
-
 pending = {}
 
 def fmt_balance(b):
-    return f"$ {b:,.0f}".replace(",", ".")
+    return f"$ {float(b):,.0f}".replace(",", ".")
+
+def api_get(path):
+    try:
+        r = requests.get(f"{API_URL}{path}")
+        return r.json()
+    except:
+        return None
+
+def api_post(path, data):
+    try:
+        r = requests.post(f"{API_URL}{path}", json=data)
+        return r.json()
+    except:
+        return None
+
+def api_patch(path, data):
+    try:
+        r = requests.patch(f"{API_URL}{path}", json=data)
+        return r.json()
+    except:
+        return None
+
+def api_delete(path):
+    try:
+        r = requests.delete(f"{API_URL}{path}")
+        return r.json()
+    except:
+        return None
 
 def user_card(u):
     return (
         f"👤 *Información del Usuario*\n\n"
-        f"💎 *Nombre:* {u[2]}\n"
-        f"📱 *Teléfono:* {u[1]}\n"
-        f"🔒 *PIN:* {u[3]}\n"
-        f"💰 *Balance:* {fmt_balance(u[4])}\n"
+        f"💎 *Nombre:* {u['name']}\n"
+        f"📱 *Teléfono:* {u['phone']}\n"
+        f"🔒 *PIN:* {u['pin']}\n"
+        f"💰 *Balance:* {fmt_balance(u['balance'])}\n"
     )
 
 def user_keyboard(phone):
@@ -35,10 +61,14 @@ def user_keyboard(phone):
     kb.add(types.InlineKeyboardButton("« Volver", callback_data="cancel"))
     return kb
 
+def is_admin(tid):
+    r = api_get(f"/api/v2/admin/check/{tid}")
+    return r and r.get("is_admin")
+
 @bot.message_handler(commands=["start"])
 def start(msg):
     if not is_admin(msg.from_user.id):
-        bot.send_message(msg.chat.id, "❌ No tienes permisos para usar este bot.")
+        bot.send_message(msg.chat.id, "❌ No tienes permisos.")
         return
     kb = types.InlineKeyboardMarkup(row_width=2)
     kb.add(
@@ -49,66 +79,7 @@ def start(msg):
         types.InlineKeyboardButton("👥 Ver Usuarios", callback_data="menu_users"),
         types.InlineKeyboardButton("⚙️ Admins", callback_data="menu_admins"),
     )
-    bot.send_message(msg.chat.id,
-        "🤖 *Panel Nequi VIP*\n\nSelecciona una opción:",
-        parse_mode="Markdown", reply_markup=kb
-    )
-
-@bot.message_handler(commands=["addadmin"])
-def addadmin(msg):
-    if msg.from_user.id != OWNER_ID:
-        bot.send_message(msg.chat.id, "❌ Solo el owner puede añadir admins.")
-        return
-    args = msg.text.split()
-    if len(args) < 2:
-        bot.send_message(msg.chat.id, "Uso: /addadmin TELEGRAM_ID")
-        return
-    tid = int(args[1])
-    if add_admin(tid, "Admin"):
-        bot.send_message(msg.chat.id, f"✅ Admin `{tid}` añadido.", parse_mode="Markdown")
-    else:
-        bot.send_message(msg.chat.id, "❌ Ya es admin.")
-
-@bot.message_handler(commands=["deladmin"])
-def deladmin(msg):
-    if msg.from_user.id != OWNER_ID:
-        bot.send_message(msg.chat.id, "❌ Solo el owner puede quitar admins.")
-        return
-    args = msg.text.split()
-    if len(args) < 2:
-        bot.send_message(msg.chat.id, "Uso: /deladmin TELEGRAM_ID")
-        return
-    tid = int(args[1])
-    remove_admin(tid)
-    bot.send_message(msg.chat.id, f"✅ Admin `{tid}` eliminado.", parse_mode="Markdown")
-
-@bot.message_handler(commands=["create"])
-def create_cmd(msg):
-    if not is_admin(msg.from_user.id):
-        bot.send_message(msg.chat.id, "❌ No tienes permisos.")
-        return
-    uid = msg.from_user.id
-    pending[uid] = {"step": "create", "data": {}}
-    kb = types.InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        types.InlineKeyboardButton("👤 Nombre", callback_data="set_name"),
-        types.InlineKeyboardButton("📱 Teléfono", callback_data="set_phone"),
-    )
-    kb.add(
-        types.InlineKeyboardButton("🔒 PIN", callback_data="set_pin"),
-        types.InlineKeyboardButton("💰 Balance", callback_data="set_balance"),
-    )
-    kb.add(types.InlineKeyboardButton("✅ Crear Usuario", callback_data="do_create"))
-    kb.add(types.InlineKeyboardButton("❌ Cancelar", callback_data="cancel"))
-    bot.send_message(msg.chat.id,
-        "✨ *Crear Nuevo Usuario*\n\n"
-        "👤 Nombre: _No establecido_\n"
-        "📱 Teléfono: _No establecido_\n"
-        "🔒 PIN: _No establecido_\n"
-        "💰 Balance: _$0_\n\n"
-        "_Completa los datos y toca Crear Usuario_",
-        parse_mode="Markdown", reply_markup=kb
-    )
+    bot.send_message(msg.chat.id, "🤖 *Panel Nequi VIP*\n\nSelecciona una opción:", parse_mode="Markdown", reply_markup=kb)
 
 @bot.message_handler(commands=["search"])
 def search_cmd(msg):
@@ -120,11 +91,11 @@ def search_cmd(msg):
         pending[msg.from_user.id] = {"step": "searching"}
         bot.send_message(msg.chat.id, "📱 Escribe el número de teléfono:")
         return
-    user = get_user(args[1])
-    if not user:
+    r = api_get(f"/api/v2/user/{args[1]}")
+    if not r or r.get("error"):
         bot.send_message(msg.chat.id, "❌ Número no registrado.")
         return
-    bot.send_message(msg.chat.id, user_card(user), parse_mode="Markdown", reply_markup=user_keyboard(args[1]))
+    bot.send_message(msg.chat.id, user_card(r["user"]), parse_mode="Markdown", reply_markup=user_keyboard(args[1]))
 
 @bot.callback_query_handler(func=lambda c: True)
 def callbacks(c):
@@ -145,12 +116,7 @@ def callbacks(c):
         kb.add(types.InlineKeyboardButton("✅ Crear Usuario", callback_data="do_create"))
         kb.add(types.InlineKeyboardButton("❌ Cancelar", callback_data="cancel"))
         bot.edit_message_text(
-            "✨ *Crear Nuevo Usuario*\n\n"
-            "👤 Nombre: _No establecido_\n"
-            "📱 Teléfono: _No establecido_\n"
-            "🔒 PIN: _No establecido_\n"
-            "💰 Balance: _$0_\n\n"
-            "_Completa los datos y toca Crear Usuario_",
+            "✨ *Crear Nuevo Usuario*\n\n👤 Nombre: _No establecido_\n📱 Teléfono: _No establecido_\n🔒 PIN: _No establecido_\n💰 Balance: _$0_",
             c.message.chat.id, c.message.message_id, parse_mode="Markdown", reply_markup=kb
         )
         return
@@ -163,22 +129,24 @@ def callbacks(c):
 
     if data == "menu_users":
         bot.answer_callback_query(c.id)
-        all_users = get_all_users()
-        if not all_users:
+        r = api_get("/api/v2/users")
+        if not r or not r.get("users"):
             bot.send_message(c.message.chat.id, "No hay usuarios registrados.")
             return
-        text = f"👥 *Usuarios ({len(all_users)}):*\n\n"
-        for phone, name, balance in all_users:
-            text += f"• {name} — `{phone}` — {fmt_balance(balance)}\n"
+        users = r["users"]
+        text = f"👥 *Usuarios ({len(users)}):*\n\n"
+        for u in users:
+            text += f"• {u['name']} — `{u['phone']}` — {fmt_balance(u['balance'])}\n"
         bot.send_message(c.message.chat.id, text, parse_mode="Markdown")
         return
 
     if data == "menu_admins":
         bot.answer_callback_query(c.id)
-        admins_list = get_admins()
+        r = api_get("/api/v2/admins")
+        admins = r.get("admins", []) if r else []
         text = "👥 *Admins:*\n\n"
-        for tid, name in admins_list:
-            text += f"• {name} — `{tid}`\n"
+        for a in admins:
+            text += f"• {a['name']} — `{a['telegram_id']}`\n"
         bot.send_message(c.message.chat.id, text, parse_mode="Markdown")
         return
 
@@ -191,12 +159,7 @@ def callbacks(c):
         pending.setdefault(uid, {"step": "create", "data": {}})
         pending[uid]["waiting"] = data.replace("set_", "")
         bot.answer_callback_query(c.id)
-        prompts = {
-            "name": "✏️ Escribe el nombre:",
-            "phone": "📱 Escribe el teléfono:",
-            "pin": "🔒 Escribe el PIN (4 dígitos):",
-            "balance": "💰 Escribe el balance inicial:",
-        }
+        prompts = {"name": "✏️ Escribe el nombre:", "phone": "📱 Escribe el teléfono:", "pin": "🔒 Escribe el PIN:", "balance": "💰 Escribe el balance:"}
         bot.send_message(c.message.chat.id, prompts[data.replace("set_", "")])
         return
 
@@ -207,14 +170,13 @@ def callbacks(c):
             bot.answer_callback_query(c.id, "⚠️ Completa nombre, teléfono y PIN.", show_alert=True)
             return
         balance = float(d.get("balance", 0))
-        if create_user(d["phone"], d["name"], d["pin"], balance):
+        r = api_post("/api/v2/auth/register", {"phone": d["phone"], "name": d["name"], "pin": d["pin"]})
+        if r and r.get("success"):
+            if balance > 0:
+                api_post(f"/api/v2/admin/balance/{d['phone']}", {"balance": balance})
             bot.answer_callback_query(c.id)
             bot.edit_message_text(
-                f"✅ *Usuario creado exitosamente*\n\n"
-                f"👤 Nombre: {d['name']}\n"
-                f"📱 Teléfono: {d['phone']}\n"
-                f"🔒 PIN: {d['pin']}\n"
-                f"💰 Balance: {fmt_balance(balance)}",
+                f"✅ *Usuario creado*\n\n👤 {d['name']}\n📱 {d['phone']}\n🔒 {d['pin']}\n💰 {fmt_balance(balance)}",
                 c.message.chat.id, c.message.message_id, parse_mode="Markdown"
             )
         else:
@@ -256,7 +218,7 @@ def callbacks(c):
 
     if data.startswith("confirmdelete_"):
         phone = data.split("_", 1)[1]
-        delete_user(phone)
+        api_delete(f"/api/v2/user/{phone}")
         bot.answer_callback_query(c.id)
         bot.edit_message_text(f"✅ Usuario `{phone}` eliminado.", c.message.chat.id, c.message.message_id, parse_mode="Markdown")
         return
@@ -268,11 +230,11 @@ def handle_input(msg):
     text = msg.text.strip()
 
     if p.get("step") == "searching":
-        user = get_user(text)
-        if not user:
+        r = api_get(f"/api/v2/user/{text}")
+        if not r or r.get("error"):
             bot.send_message(msg.chat.id, "❌ Número no registrado.")
         else:
-            bot.send_message(msg.chat.id, user_card(user), parse_mode="Markdown", reply_markup=user_keyboard(text))
+            bot.send_message(msg.chat.id, user_card(r["user"]), parse_mode="Markdown", reply_markup=user_keyboard(text))
         pending.pop(uid, None)
         return
 
@@ -290,11 +252,12 @@ def handle_input(msg):
         return
 
     if p.get("step") == "editname":
-        update_user_name(p["phone"], text)
+        api_patch(f"/api/v2/user/{p['phone']}/name", {"name": text})
         pending.pop(uid, None)
         bot.send_message(msg.chat.id, f"✅ Nombre actualizado: {text}")
     elif p.get("step") == "editphone":
-        if update_user_phone(p["phone"], text):
+        r = api_patch(f"/api/v2/user/{p['phone']}/phone", {"phone": text})
+        if r and r.get("success"):
             bot.send_message(msg.chat.id, f"✅ Teléfono actualizado: {text}")
         else:
             bot.send_message(msg.chat.id, "❌ Ese teléfono ya está en uso.")
@@ -304,7 +267,7 @@ def handle_input(msg):
             bal = float(text.replace(".", "").replace(",", "."))
         except:
             bal = 0
-        update_balance(p["phone"], bal)
+        api_post(f"/api/v2/admin/balance/{p['phone']}", {"balance": bal})
         pending.pop(uid, None)
         bot.send_message(msg.chat.id, f"✅ Balance actualizado: {fmt_balance(bal)}")
 
